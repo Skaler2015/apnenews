@@ -32,15 +32,18 @@ export const rssNewsProvider: NewsProvider = {
   name: 'rss',
   async fetch(feedUrl: string): Promise<RawFeedItem[]> {
     const feed = await parser.parseURL(feedUrl);
-    return (feed.items || []).map((item) => ({
-      title: (item.title || '').trim(),
-      link: (item.link || '').trim(),
-      contentSnippet: item.contentSnippet?.trim(),
-      content: (item['content:encoded'] as string) || item.content,
-      isoDate: item.isoDate,
-      pubDate: item.pubDate,
-      enclosureUrl: extractImage(item as Record<string, unknown>),
-      categories: item.categories as string[] | undefined,
-    }));
+    return (feed.items || []).map((raw) => {
+      const item = raw as unknown as Record<string, unknown>;
+      return {
+        title: String(item.title || '').trim(),
+        link: String(item.link || '').trim(),
+        contentSnippet: typeof item.contentSnippet === 'string' ? item.contentSnippet.trim() : undefined,
+        content: (item['content:encoded'] as string) || (item.content as string) || undefined,
+        isoDate: item.isoDate as string | undefined,
+        pubDate: item.pubDate as string | undefined,
+        enclosureUrl: extractImage(item),
+        categories: item.categories as string[] | undefined,
+      };
+    });
   },
 };
