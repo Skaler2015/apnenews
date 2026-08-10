@@ -1,0 +1,18 @@
+# ApneNews — self-hosted cron schedule (spec §54/§89)
+# Each job hits a secured endpoint. Replace HOST and CRON_SECRET.
+# Jobs are independent and individually retryable.
+#
+# HOST=https://apnenews.example.com
+# SECRET=your-cron-secret
+
+*/15 * * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/fetch-news        >/dev/null
+*/5  * * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/process-news      >/dev/null
+*/10 * * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/publish-queue     >/dev/null
+*/5  * * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/breaking-news     >/dev/null
+0    * * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/update-trending   >/dev/null
+0  */2 * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/update-sitemap    >/dev/null
+30  18 * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/daily-report      >/dev/null
+0    3 * * *  curl -fsS -H "Authorization: Bearer $SECRET" $HOST/api/cron/cleanup-old-data  >/dev/null
+
+# Alternatively, run the whole pipeline in one tick (simplest for a single box):
+# */15 * * * * cd /path/to/apnenews && npm run cron:pipeline >> /var/log/apnenews.log 2>&1

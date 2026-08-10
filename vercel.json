@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/fetch-news", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/process-news", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/publish-queue", "schedule": "*/10 * * * *" },
+    { "path": "/api/cron/breaking-news", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/update-trending", "schedule": "0 * * * *" },
+    { "path": "/api/cron/update-sitemap", "schedule": "0 */2 * * *" },
+    { "path": "/api/cron/daily-report", "schedule": "30 18 * * *" },
+    { "path": "/api/cron/cleanup-old-data", "schedule": "0 3 * * *" }
+  ]
+}
