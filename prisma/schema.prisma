@@ -1,0 +1,521 @@
+// ApneNews — Prisma schema
+// Default: SQLite (zero-config). For production Postgres, change
+// `provider` to "postgresql" and set DATABASE_URL accordingly.
+// Statuses are stored as String (portable across SQLite/Postgres);
+// canonical values live in src/lib/constants.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------
+// Auth & RBAC
+// ---------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("EDITOR") // SUPER_ADMIN | EDITOR | REVIEWER | AUTHOR | SEO_MANAGER
+  permissions  String   @default("[]") // JSON array of permission strings (overrides)
+  twoFactorSecret String?
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions     Session[]
+  reviewedArticles NewsArticle[] @relation("ReviewedBy")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------
+// Taxonomy
+// ---------------------------------------------------------------
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   // Hindi display name
+  nameEn      String   // English name (admin)
+  slug        String   @unique
+  description String?
+  seoTitle    String?
+  metaDescription String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  isLocal     Boolean  @default(false) // e.g. Rajasthan / district hub
+  color       String   @default("#c8102e")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  articles    NewsArticle[]
+  newsItems   NewsItem[]
+  sources     NewsSource[]
+  districts   District[]
+}
+
+model District {
+  id         String   @id @default(cuid())
+  name       String
+  nameEn     String
+  slug       String   @unique
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  articles   NewsArticle[]
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  articles  ArticleTag[]
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag       Tag         @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+  @@index([tagId])
+}
+
+model Author {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  bio         String?
+  profileImage String?
+  socialLinks String   @default("{}") // JSON
+  isAiAssisted Boolean @default(true) // transparency: AI-assisted desk
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  articles    NewsArticle[]
+}
+
+// ---------------------------------------------------------------
+// News Sources
+// ---------------------------------------------------------------
+
+model NewsSource {
+  id             String   @id @default(cuid())
+  name           String
+  url            String   // homepage
+  feedUrl        String   // RSS/API url
+  type           String   @default("RSS") // RSS | API | GOV | PRESS | YOUTUBE | MANUAL
+  language       String   @default("hi")
+  priority       Int      @default(60) // 0-100
+  trustScore     Int      @default(70) // 0-100
+  isOfficial     Boolean  @default(false)
+  isDemo         Boolean  @default(false) // clearly-marked demo source
+  isActive       Boolean  @default(true)
+  fetchInterval  Int      @default(15) // minutes
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id])
+  lastFetchAt    DateTime?
+  lastSuccessAt  DateTime?
+  errorCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  newsItems      NewsItem[]
+  fetchLogs      SourceFetchLog[]
+
+  @@index([isActive])
+}
+
+model SourceFetchLog {
+  id         String   @id @default(cuid())
+  sourceId   String
+  source     NewsSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  status     String   // SUCCESS | ERROR
+  itemsFound Int      @default(0)
+  itemsNew   Int      @default(0)
+  message    String?
+  durationMs Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([sourceId, createdAt])
+}
+
+// ---------------------------------------------------------------
+// News pipeline: raw items -> generated articles
+// ---------------------------------------------------------------
+
+model NewsItem {
+  id             String   @id @default(cuid())
+  sourceId       String?
+  source         NewsSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  sourceName     String
+  sourceType     String   @default("RSS")
+  sourceUrl      String   // original article URL
+  urlHash        String   @unique // sha256 of normalized url
+  fingerprint    String   // content fingerprint (title+text simhash-ish)
+  title          String
+  excerpt        String?
+  rawContent     String?  // metadata/excerpt only (never full copyrighted body)
+  imageUrl       String?
+  publishedAt    DateTime?
+  importedAt     DateTime @default(now())
+  language       String   @default("hi")
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id])
+  priority       Int      @default(60)
+  duplicateScore Int      @default(0)
+  status         String   @default("IMPORTED") // IMPORTED|PROCESSING|PROCESSED|DUPLICATE|REJECTED|FAILED
+  isDemo         Boolean  @default(false)
+  attempts       Int      @default(0)
+  lastError      String?
+
+  article        NewsArticle?
+  duplicateChecks DuplicateCheck[] @relation("ItemChecks")
+
+  @@index([status])
+  @@index([fingerprint])
+  @@index([priority])
+}
+
+model NewsArticle {
+  id             String   @id @default(cuid())
+  newsItemId     String?  @unique
+  newsItem       NewsItem? @relation(fields: [newsItemId], references: [id], onDelete: SetNull)
+
+  // Content
+  title          String
+  subtitle       String?
+  slug           String   @unique
+  content        String   // generated original Hindi (HTML/markdown)
+  summaryOneLine String?
+  summaryShort   String?  // ~50 words
+  socialSummary  String?
+  pushSummary    String?
+  faq            String?  // JSON [{q,a}]
+  wordCount      Int      @default(0)
+
+  // Taxonomy / attribution
+  categoryId     String?
+  category       Category? @relation(fields: [categoryId], references: [id])
+  districtId     String?
+  district       District? @relation(fields: [districtId], references: [id])
+  authorId       String?
+  author         Author?   @relation(fields: [authorId], references: [id])
+
+  // Source attribution
+  sourceName     String?
+  sourceUrl      String?
+  sourceType     String?
+  sourcePublishedAt DateTime?
+
+  // Scores
+  priority       Int      @default(60)
+  duplicateScore Int      @default(0)
+  factConfidence Int      @default(0)
+  qualityScore   Int      @default(0)
+
+  // Flags
+  isBreaking     Boolean  @default(false)
+  isFeatured     Boolean  @default(false)
+  isDemo         Boolean  @default(false)
+
+  // Workflow
+  status         String   @default("PROCESSED") // see constants.ARTICLE_STATUS
+  reviewedById   String?
+  reviewedBy     User?    @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  scheduledFor   DateTime?
+  publishedAt    DateTime?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  // Engagement
+  views          Int      @default(0)
+  trendingScore  Float    @default(0)
+
+  tags           ArticleTag[]
+  images         NewsImage[]
+  seo            SeoMetadata?
+  versions       NewsVersion[]
+  factCheck      FactCheck?
+  quality        QualityScore?
+  publishLogs    PublishLog[]
+  socialPosts    SocialPost[]
+  queueItem      NewsQueue?
+  internalLinksFrom InternalLink[] @relation("LinkSource")
+  internalLinksTo   InternalLink[] @relation("LinkTarget")
+
+  @@index([status])
+  @@index([publishedAt])
+  @@index([categoryId])
+  @@index([isBreaking])
+  @@index([trendingScore])
+}
+
+// Live/developing story updates
+model NewsVersion {
+  id        String   @id @default(cuid())
+  articleId String
+  article   NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  note      String   // what changed
+  content   String?
+  createdAt DateTime @default(now())
+
+  @@index([articleId])
+}
+
+model NewsImage {
+  id         String   @id @default(cuid())
+  articleId  String
+  article    NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  role       String   @default("FEATURED") // FEATURED | THUMBNAIL | SOCIAL
+  url        String
+  altText    String?
+  caption    String?
+  credit     String?
+  provider   String   @default("placeholder")
+  width      Int?
+  height     Int?
+  createdAt  DateTime @default(now())
+
+  @@index([articleId])
+}
+
+model InternalLink {
+  id         String   @id @default(cuid())
+  sourceId   String
+  targetId   String
+  anchorText String
+  source     NewsArticle @relation("LinkSource", fields: [sourceId], references: [id], onDelete: Cascade)
+  target     NewsArticle @relation("LinkTarget", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, targetId])
+  @@index([targetId])
+}
+
+// ---------------------------------------------------------------
+// Quality / dedupe / fact-check
+// ---------------------------------------------------------------
+
+model DuplicateCheck {
+  id            String   @id @default(cuid())
+  newsItemId    String
+  newsItem      NewsItem @relation("ItemChecks", fields: [newsItemId], references: [id], onDelete: Cascade)
+  matchedItemId String?
+  score         Int      // 0-100
+  method        String   // URL_HASH | TITLE_SIM | TEXT_SIM | FINGERPRINT
+  verdict       String   // DIFFERENT | REVIEW | DUPLICATE
+  createdAt     DateTime @default(now())
+
+  @@index([newsItemId])
+}
+
+model FactCheck {
+  id            String   @id @default(cuid())
+  articleId     String   @unique
+  article       NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  confidence    Int      // 0-100
+  checkedEntities String @default("[]") // JSON: names/dates/numbers/orgs
+  unsupportedClaims String @default("[]") // JSON
+  verdict       String   // PASS | REVIEW | FAIL
+  createdAt     DateTime @default(now())
+}
+
+model QualityScore {
+  id           String   @id @default(cuid())
+  articleId    String   @unique
+  article      NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  accuracy     Int      @default(0)
+  originality  Int      @default(0)
+  seo          Int      @default(0)
+  readability  Int      @default(0)
+  sourceTrust  Int      @default(0)
+  finalScore   Int      @default(0)
+  createdAt    DateTime @default(now())
+}
+
+// ---------------------------------------------------------------
+// SEO
+// ---------------------------------------------------------------
+
+model SeoMetadata {
+  id            String   @id @default(cuid())
+  articleId     String   @unique
+  article       NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  seoTitle      String
+  metaDescription String
+  focusKeyword  String?
+  secondaryKeywords String @default("[]") // JSON array
+  canonicalUrl  String?
+  ogTitle       String?
+  ogDescription String?
+  twitterTitle  String?
+  twitterDescription String?
+  imageAlt      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------
+// Queue & publishing
+// ---------------------------------------------------------------
+
+model NewsQueue {
+  id          String   @id @default(cuid())
+  articleId   String   @unique
+  article     NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  priority    Int      @default(60)
+  aiStatus    String   @default("DONE")     // PENDING | DONE | FAILED
+  imageStatus String   @default("DONE")
+  seoStatus   String   @default("DONE")
+  publishStatus String @default("QUEUED")   // QUEUED | SCHEDULED | PUBLISHED | HELD | REJECTED
+  scheduledFor DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([publishStatus, priority])
+}
+
+model PublishLog {
+  id         String   @id @default(cuid())
+  articleId  String
+  article    NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  action     String   // PUBLISHED | SCHEDULED | UPDATED | UNPUBLISHED
+  message    String?
+  createdAt  DateTime @default(now())
+
+  @@index([articleId])
+}
+
+// ---------------------------------------------------------------
+// AI usage & jobs
+// ---------------------------------------------------------------
+
+model AiJob {
+  id         String   @id @default(cuid())
+  type       String   // ARTICLE | SEO | FACTCHECK | TAGS | IMAGE_PROMPT | SUMMARY
+  refId      String?  // newsItem or article id
+  status     String   @default("PENDING") // PENDING | RUNNING | DONE | FAILED
+  provider   String   @default("mock")
+  model      String?
+  attempts   Int      @default(0)
+  error      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status])
+}
+
+model AiUsage {
+  id           String   @id @default(cuid())
+  jobType      String
+  provider     String
+  model        String?
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  costInr      Float    @default(0)
+  refId        String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------
+// Social
+// ---------------------------------------------------------------
+
+model SocialPost {
+  id         String   @id @default(cuid())
+  articleId  String
+  article    NewsArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  platform   String   // FACEBOOK | TWITTER | TELEGRAM | WHATSAPP
+  content    String
+  status     String   @default("QUEUED") // QUEUED | SENT | FAILED | DISABLED
+  externalId String?
+  error      String?
+  createdAt  DateTime @default(now())
+  sentAt     DateTime?
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------
+// Ops: settings, logs, notifications, analytics, sitemap
+// ---------------------------------------------------------------
+
+model Setting {
+  key       String   @id
+  value     String   // JSON-encoded value
+  updatedAt DateTime @updatedAt
+}
+
+model ErrorLog {
+  id         String   @id @default(cuid())
+  scope      String   // FETCH | AI | IMAGE | PUBLISH | SITEMAP | DB | SOCIAL | SYSTEM
+  level      String   @default("ERROR") // INFO | WARN | ERROR
+  message    String
+  meta       String?  // JSON
+  createdAt  DateTime @default(now())
+
+  @@index([scope, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  type      String   // SOURCE_FAIL | AI_FAIL | TARGET_MISS | DUPLICATE_SPIKE | PUBLISH_FAIL | BREAKING | QUOTA_LOW
+  title     String
+  message   String
+  severity  String   @default("INFO") // INFO | WARN | CRITICAL
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([isRead])
+}
+
+model AnalyticsEvent {
+  id         String   @id @default(cuid())
+  type       String   // PAGEVIEW | ARTICLE_VIEW | SEARCH
+  path       String?
+  articleId  String?
+  referrer   String?
+  device     String?
+  country    String?
+  createdAt  DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([articleId])
+}
+
+model SearchQuery {
+  id        String   @id @default(cuid())
+  query     String   @unique
+  count     Int      @default(1)
+  updatedAt DateTime @updatedAt
+}
+
+model SitemapLog {
+  id         String   @id @default(cuid())
+  type       String   // MAIN | NEWS | CATEGORY | IMAGE
+  urlCount   Int      @default(0)
+  status     String   @default("SUCCESS")
+  createdAt  DateTime @default(now())
+}
