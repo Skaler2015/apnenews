@@ -1,8 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-import BreakingTicker from '@/components/BreakingTicker';
 
 const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
 
@@ -13,10 +10,7 @@ export const metadata: Metadata = {
     template: '%s · ApneNews',
   },
   description: 'हिंदी में विश्वसनीय, तेज़ और SEO-अनुकूल खबरें — भारत, राजस्थान, बिज़नेस, टेक, खेल और अधिक।',
-  alternates: {
-    canonical: '/',
-    types: { 'application/rss+xml': `${APP_URL}/feed` },
-  },
+  alternates: { canonical: '/', types: { 'application/rss+xml': `${APP_URL}/feed` } },
   openGraph: { type: 'website', locale: 'hi_IN', siteName: 'ApneNews' },
   robots: { index: true, follow: true },
 };
@@ -30,18 +24,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
+        <link href="https://fonts.googleapis.com/css2?family=Hind:wght@400;500;600;700&display=swap" rel="stylesheet" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="min-h-screen">
-        <Header />
-        <BreakingTicker />
-        <main>{children}</main>
-        <Footer />
-      </body>
+      <body className="min-h-screen">{children}</body>
     </html>
   );
 }
