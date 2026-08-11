@@ -1,0 +1,41 @@
+name: Automation cron (trigger pipeline)
+
+# Free automation for Vercel Hobby (whose built-in cron is limited to daily):
+# GitHub Actions pings the live pipeline endpoint on a schedule so news keeps
+# getting fetched, processed and published automatically.
+#
+# Set these repo Secrets to enable it (otherwise it safely no-ops):
+#   SITE_URL     e.g. https://apnenews.in
+#   CRON_SECRET  same value you set in Vercel env
+#
+# Schedules are UTC; GitHub may delay runs a few minutes under load.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # fetch + process + publish tick
+    - cron: '0 3 * * *' # daily cleanup (03:00 UTC)
+  workflow_dispatch: {}
+
+concurrency:
+  group: automation-cron
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run pipeline (fetch → process → publish → trending)
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        if: ${{ env.SITE_URL != '' && env.CRON_SECRET != '' }}
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/cron/pipeline" || true
+
+      - name: Nightly cleanup
+        env:
+          SITE_URL: ${{ secrets.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        if: ${{ env.SITE_URL != '' && env.CRON_SECRET != '' && github.event.schedule == '0 3 * * *' }}
+        run: |
+          curl -fsS -X POST -H "Authorization: Bearer $CRON_SECRET" "$SITE_URL/api/cron/cleanup-old-data" || true

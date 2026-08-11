@@ -84,15 +84,20 @@ Never expose keys to the client — all providers run server-side only.
 
 ## Database setup
 
-Default is **SQLite** for zero-config development. For production **PostgreSQL**:
+Uses **PostgreSQL** (works locally and on serverless hosts like Vercel). Set
+`DATABASE_URL` (pooled) and `DIRECT_URL` (direct) in `.env` — e.g. a free
+[Neon](https://neon.tech) database, or a local Postgres:
 
-1. In `prisma/schema.prisma` change the datasource provider:
-   ```prisma
-   datasource db { provider = "postgresql"  url = env("DATABASE_URL") }
-   ```
-2. Set `DATABASE_URL="postgresql://user:pass@host:5432/apnenews"` and
-   `DATABASE_PROVIDER="postgresql"` in `.env`.
-3. Run `npm run prisma:migrate` (or `prisma:push`) then `npm run db:seed`.
+```bash
+DATABASE_URL="postgresql://user:pass@localhost:5432/apnenews"
+DIRECT_URL="postgresql://user:pass@localhost:5432/apnenews"
+npm run prisma:push      # create tables
+npm run db:seed          # demo data through the real pipeline
+```
+
+On Vercel the tables are created automatically at build time; run the
+`/api/setup?secret=CRON_SECRET` endpoint once to bootstrap admin + content
+(see the Vercel guide).
 
 The schema (30+ normalized models) covers users/roles, taxonomy, sources +
 fetch logs, news items/articles/versions, images, dedupe/fact/quality checks,
@@ -219,14 +224,21 @@ npm run typecheck # tsc --noEmit
 
 ---
 
+## Deployment
+
+This is a **Node.js (Next.js) app** — it needs a Node runtime, so it will **not**
+run on shared-hosting `public_html`/PHP. Two supported paths:
+
+- [`docs/DEPLOY-VERCEL.md`](./docs/DEPLOY-VERCEL.md) — **Vercel (free, easiest)**:
+  GitHub → auto-deploy on every push, free Neon Postgres, one-click `/api/setup`
+  bootstrap, custom-domain + DNS steps, free automation via GitHub Actions cron.
+- [`docs/DEPLOY-VPS.md`](./docs/DEPLOY-VPS.md) — **Hostinger VPS**: Node/PM2/Nginx/
+  SSL, SSH auto-deploy via GitHub Actions, DNS, cron.
+
 ## Documentation
 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — module map, data model,
   pipeline internals, provider abstraction, and how requirements map to code.
-- [`docs/DEPLOY-VPS.md`](./docs/DEPLOY-VPS.md) — **Hostinger VPS पर deploy +
-  हर git push पर auto-deploy** (Hindi step-by-step: Node/PM2/Nginx/SSL, GitHub
-  Actions, DNS, cron). Note: this Node.js app needs a VPS or Vercel — it will
-  **not** run on shared-hosting `public_html`/PHP.
 
 ## Content & copyright policy
 

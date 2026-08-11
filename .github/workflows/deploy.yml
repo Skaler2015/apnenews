@@ -5,9 +5,11 @@ name: Deploy to Hostinger VPS
 # Configure repo Secrets: VPS_HOST, VPS_USER, VPS_SSH_KEY, VPS_PORT (optional),
 # VPS_APP_DIR (optional, defaults to /var/www/apnenews).
 
+# NOTE: This VPS workflow is manual-only (workflow_dispatch) so it never fails
+# for Vercel users. On Vercel, deploys happen automatically via Vercel's GitHub
+# integration — you do NOT need this workflow. Use it only if you deploy to a
+# self-managed VPS (see docs/DEPLOY-VPS.md) and have set the VPS_* secrets.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 concurrency:
