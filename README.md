@@ -223,6 +223,10 @@ npm run typecheck # tsc --noEmit
 
 - [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — module map, data model,
   pipeline internals, provider abstraction, and how requirements map to code.
+- [`docs/DEPLOY-VPS.md`](./docs/DEPLOY-VPS.md) — **Hostinger VPS पर deploy +
+  हर git push पर auto-deploy** (Hindi step-by-step: Node/PM2/Nginx/SSL, GitHub
+  Actions, DNS, cron). Note: this Node.js app needs a VPS or Vercel — it will
+  **not** run on shared-hosting `public_html`/PHP.
 
 ## Content & copyright policy
 
